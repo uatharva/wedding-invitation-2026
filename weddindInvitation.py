@@ -1243,7 +1243,11 @@ HTML = r"""
       }
 
       // convert RSVP buttons to open modal when appropriate
+      // but skip any buttons that live inside the RSVP modal itself
       document.querySelectorAll('.btn.btn-primary').forEach(btn => {
+        try {
+          if (btn.closest && btn.closest('#rsvp-modal')) return; // skip modal's own submit button
+        } catch(e) { /* ignore */ }
         if (btn.textContent && btn.textContent.toLowerCase().includes('rsvp')) {
           btn.addEventListener('click', (e) => { e.preventDefault(); openRsvpModal(); });
         }
