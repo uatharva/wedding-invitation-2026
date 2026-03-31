@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+server.log
+rsvp_responses.csv
+*.log
+.DS_Store
+.vscode/
+.idea/
