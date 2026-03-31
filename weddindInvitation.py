@@ -1,13 +1,16 @@
 from flask import Flask, render_template_string, request, redirect, url_for, jsonify
-import csv
 import os
 import secrets
 from datetime import datetime
 
+# Database models
+from models import init_db, RSVP
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 
-CSV_FILE = "rsvp_responses.csv"
+# Initialize DB (reads DATABASE_URL from env or falls back to local sqlite file)
+engine, SessionLocal = init_db()
 
 WEDDING = {
     "couple_names": "Nehal & Atharva",
@@ -1298,20 +1301,7 @@ HTML = r"""
 """
 
 
-def initialize_csv() -> None:
-    if not os.path.exists(CSV_FILE):
-        with open(CSV_FILE, mode="w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow([
-                "timestamp",
-                "full_name",
-                "attending",
-                "guest_count",
-                "meal_preference",
-                "dietary_restrictions",
-                "song_request",
-                "message",
-            ])
+# CSV storage removed in favor of SQLAlchemy/Postgres. Old CSV helper removed.
 
 
 @app.route("/", methods=["GET"])
@@ -1322,71 +1312,96 @@ def home():
 
 @app.route("/rsvp", methods=["POST"])
 def rsvp():
-    initialize_csv()
-    response = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "full_name": request.form.get("full_name", "").strip(),
-        "attending": request.form.get("attending", "").strip(),
-        "guest_count": request.form.get("guest_count", "").strip(),
-        "meal_preference": request.form.get("meal_preference", "").strip(),
-        "dietary_restrictions": request.form.get("dietary_restrictions", "").strip(),
-        "song_request": request.form.get("song_request", "").strip(),
-        "message": request.form.get("message", "").strip(),
-    }
-    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            response["timestamp"],
-            response["full_name"],
-            response["attending"],
-            response["guest_count"],
-            response["meal_preference"],
-            response["dietary_restrictions"],
-            response["song_request"],
-            response["message"],
-        ])
-    return redirect(url_for("home", success="1") + "#rsvp")
+  # Persist RSVP to the database
+  session = SessionLocal()
+  try:
+    full_name = request.form.get("full_name", "").strip()
+    attending = request.form.get("attending", "").strip()
+    guest_count_raw = request.form.get("guest_count", "").strip()
+    try:
+      guest_count = int(guest_count_raw) if guest_count_raw else None
+    except ValueError:
+      guest_count = None
+    meal_preference = request.form.get("meal_preference", "").strip()
+    dietary_restrictions = request.form.get("dietary_restrictions", "").strip()
+    song_request = request.form.get("song_request", "").strip()
+    message = request.form.get("message", "").strip()
+
+    r = RSVP(
+      full_name=full_name,
+      attending=attending,
+      guest_count=guest_count,
+      meal_preference=meal_preference,
+      dietary_restrictions=dietary_restrictions,
+      song_request=song_request,
+      message=message,
+    )
+    session.add(r)
+    session.commit()
+  finally:
+    session.close()
+
+  return redirect(url_for("home", success="1") + "#rsvp")
 
 
 @app.route("/api/rsvp", methods=["POST"])
 def api_rsvp():
   """Accept RSVP via AJAX (FormData) and return JSON."""
-  initialize_csv()
-  # support both form and multipart FormData the same way
-  response = {
-    "timestamp": datetime.now().isoformat(timespec="seconds"),
-    "full_name": request.form.get("full_name", "").strip(),
-    "attending": request.form.get("attending", "").strip(),
-    "guest_count": request.form.get("guest_count", "").strip(),
-    "meal_preference": request.form.get("meal_preference", "").strip(),
-    "dietary_restrictions": request.form.get("dietary_restrictions", "").strip(),
-    "song_request": request.form.get("song_request", "").strip(),
-    "message": request.form.get("message", "").strip(),
-  }
-  with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as file:
-    writer = csv.writer(file)
-    writer.writerow([
-      response["timestamp"],
-      response["full_name"],
-      response["attending"],
-      response["guest_count"],
-      response["meal_preference"],
-      response["dietary_restrictions"],
-      response["song_request"],
-      response["message"],
-    ])
+  # Persist via DB and return success
+  session = SessionLocal()
+  try:
+    full_name = request.form.get("full_name", "").strip()
+    attending = request.form.get("attending", "").strip()
+    guest_count_raw = request.form.get("guest_count", "").strip()
+    try:
+      guest_count = int(guest_count_raw) if guest_count_raw else None
+    except ValueError:
+      guest_count = None
+    meal_preference = request.form.get("meal_preference", "").strip()
+    dietary_restrictions = request.form.get("dietary_restrictions", "").strip()
+    song_request = request.form.get("song_request", "").strip()
+    message = request.form.get("message", "").strip()
+
+    r = RSVP(
+      full_name=full_name,
+      attending=attending,
+      guest_count=guest_count,
+      meal_preference=meal_preference,
+      dietary_restrictions=dietary_restrictions,
+      song_request=song_request,
+      message=message,
+    )
+    session.add(r)
+    session.commit()
+  finally:
+    session.close()
   return jsonify({"success": True})
 
 
 @app.route("/api/rsvps", methods=["GET"])
 def api_rsvps():
-    initialize_csv()
+  # Return list of RSVPs from DB
+  session = SessionLocal()
+  try:
+    items = session.query(RSVP).order_by(RSVP.timestamp).all()
     rows = []
-    with open(CSV_FILE, mode="r", newline="", encoding="utf-8") as file:
-        rows = list(csv.DictReader(file))
+    for it in items:
+      rows.append({
+        "id": it.id,
+        "timestamp": it.timestamp.isoformat() if it.timestamp else None,
+        "full_name": it.full_name,
+        "attending": it.attending,
+        "guest_count": it.guest_count,
+        "meal_preference": it.meal_preference,
+        "dietary_restrictions": it.dietary_restrictions,
+        "song_request": it.song_request,
+        "message": it.message,
+      })
     return jsonify(rows)
+  finally:
+    session.close()
 
 
 if __name__ == "__main__":
-    initialize_csv()
-    app.run(debug=True)
+  # Ensure DB is initialized (models.init_db already called at import)
+  app.run(debug=True)
