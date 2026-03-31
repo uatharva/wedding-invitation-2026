@@ -9,3 +9,5 @@ rsvp_responses.csv
 .DS_Store
 .vscode/
 .idea/
+*.db
+rsvps.db
