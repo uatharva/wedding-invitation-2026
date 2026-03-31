@@ -1,7 +1,5 @@
-from weddindInvitation import initialize_csv, app
+from weddindInvitation import app
 
-# Ensure CSV exists before the app starts handling requests
-initialize_csv()
-
-# Expose the WSGI application for servers like gunicorn
+# The app module now initializes its database on import. Expose the
+# WSGI application for servers like gunicorn.
 application = app
